@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>3D Building Guide - Floor Frame and Roof</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;height:100vh;display:flex;font-family:Segoe UI,Arial,sans-serif;background:#fdf6e9;color:#1b2a49}
+  #side{width:390px;padding:16px;overflow:auto;background:#fff;border-right:2px solid #f5a623}
+  h1{font-size:21px;margin:0 0 4px}
+  .sub{font-size:12.5px;color:#666;margin-bottom:12px}
+  .item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;cursor:pointer;border:2px solid transparent;font-size:14px}
+  .item:hover{background:#fff3dc}
+  .item.active{border-color:#f5a623;background:#fff3dc;font-weight:600}
+  .dot{width:14px;height:14px;border-radius:3px;flex:none}
+  .row{display:flex;gap:8px;align-items:center;margin-top:10px;font-size:13px}
+  button{background:#f5a623;border:0;color:#1b2a49;font-weight:600;padding:8px 12px;border-radius:8px;cursor:pointer}
+  button:hover{background:#e29412}
+  button.alt{background:#e8edf6}
+  button.tab{flex:1;background:#e8edf6;font-size:15px}
+  button.tab.sel{background:#1b2a49;color:#fff}
+  #step{flex:1;text-align:center;font-size:13px;color:#555}
+  #voicebox{margin-top:12px;padding:10px;background:#eef3fb;border-radius:10px;font-size:13px}
+  #voicebox select{width:100%;margin-top:4px;padding:4px}
+  #info{margin-top:12px;padding:14px;background:#fff3dc;border-radius:10px;font-size:13.5px;line-height:1.5}
+  #info h2{margin:0 0 6px;font-size:19px}
+  #info .tag{display:inline-block;font-size:11px;background:#1b2a49;color:#fff;border-radius:20px;padding:2px 9px;margin-bottom:8px}
+  #info .def{font-size:14.5px;margin-bottom:10px;padding:8px 10px;background:#fff;border-left:4px solid #f5a623;border-radius:4px}
+  #info dt{font-weight:700;margin-top:8px;color:#a35f00;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  #info dd{margin:2px 0 0}
+  .speaking{outline:3px solid #2f6fb5;outline-offset:2px;border-radius:4px;background:#e3efff}
+  #view{flex:1;position:relative;overflow:hidden}
+  .lab{position:absolute;transform:translate(-50%,-100%);background:#fff;border:2px solid #f5a623;border-radius:6px;
+       padding:2px 8px;font-size:12px;font-weight:600;white-space:nowrap;cursor:pointer;box-shadow:0 2px 5px #0003;z-index:5}
+  .lab:hover,.lab.on{background:#f5a623}
+  #hint{position:absolute;left:12px;bottom:10px;font-size:12px;color:#555}
+</style>
+</head>
+<body>
+<div id="side">
+  <div class="row" style="margin-top:0">
+    <button id="tab-floor" class="tab sel">Floor Frame</button>
+    <button id="tab-roof" class="tab">Roof</button>
+  </div>
+  <h1 id="ttl" style="margin-top:12px"></h1>
+  <div class="sub">Drag = rotate &middot; Scroll = zoom &middot; Right-drag = move &middot; Click any part or label</div>
+
+  <div class="row">
+    <button id="prev" class="alt">&larr; Back</button>
+    <div id="step"></div>
+    <button id="next">Next &rarr;</button>
+  </div>
+
+  <div id="voicebox">
+    <div class="row" style="margin-top:0">
+      <button id="speakBtn">&#128266; Read aloud</button>
+      <button id="stopBtn" class="alt">&#9209; Stop</button>
+    </div>
+    <div class="row"><label><input type="checkbox" id="auto" checked> Read automatically when I select a part</label></div>
+    <div class="row" style="margin-top:4px"><label><input type="checkbox" id="full" checked> Read the full card (untick = definition only)</label></div>
+    <div class="row">Speed <input id="rate" type="range" min="0.6" max="1.4" step="0.05" value="0.95" style="flex:1"></div>
+    <select id="voiceSel"></select>
+  </div>
+
+  <div id="list" style="margin-top:10px"></div>
+
+  <div class="row"><label style="flex:1">Explode view
+    <input id="explode" type="range" min="0" max="1" step="0.01" value="0" style="width:100%"></label></div>
+  <div class="row">
+    <label><input type="checkbox" id="labels" checked> Show labels</label>
+    <button id="reset" class="alt" style="margin-left:auto">Show all parts</button>
+  </div>
+
+  <div id="info"></div>
+</div>
+<div id="view"><div id="hint">Selected part is highlighted, the rest fades. Untick a box to hide a part completely.</div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+const WOOD = 0xf5a623, BLUE = 0x2f6fb5, DARK = 0x1f3f7a;
+
+/* ============ PART DEFINITIONS ============ */
+const FLOOR_PARTS = {
+  found: {label:'Foundation / piers', color:DARK, kind:'Concrete',
+    def:'The concrete base (walls or pillars called piers) that sits in the ground and supports the entire building.',
+    role:'Transfers the weight of the whole structure into the soil and keeps the wood frame up off the damp ground.',
+    material:'Poured concrete, concrete blocks, sometimes reinforced with steel bars.',
+    size:'Depth and width are set by local building code, soil type and frost depth.',
+    connects:'Carries the sill plate and the support beam.',
+    tip:'Everything above depends on a level foundation. If it is off, the whole floor will be off.'},
+  sill: {label:'Sill plate', color:WOOD, kind:'Lumber',
+    def:'A board laid flat on top of the foundation wall. It is the first wood piece of the house.',
+    role:'Connects the wood frame to the concrete foundation and gives a flat, level surface for the rim joist and joists to rest on.',
+    material:'Pressure-treated lumber (treated against rot and insects), fixed down with anchor bolts and often a foam gasket underneath.',
+    size:'Commonly 2x6 (about 38 x 140 mm).',
+    connects:'Sits on the foundation; the rim joist sits on it.',
+    tip:'It must be pressure-treated because it touches concrete, which can hold moisture.'},
+  beam: {label:'Support beam', color:WOOD, kind:'Lumber / steel',
+    def:'A large horizontal member that carries the loose ends of the floor joists across the middle of the building.',
+    role:'Shortens the span of the joists so they do not sag, and moves their load down to posts, piers or foundation walls.',
+    material:'Built-up lumber (several boards nailed together), laminated beams (glulam) or a steel I-beam.',
+    size:'Depends on the span and load; designed by the builder or engineer.',
+    connects:'Rests on piers or posts; the joists rest on or hang from it.',
+    tip:'Also called a girder. It is the strongest piece of the floor frame.'},
+  joist: {label:'Floor joists', color:WOOD, kind:'Lumber',
+    def:'Parallel horizontal boards set on edge that run side by side across the floor area.',
+    role:'Carry the subfloor and everything on it (people, furniture, walls) and pass that load to the beam and foundation.',
+    material:'Dimensional lumber (spruce, pine, fir) or engineered wood I-joists.',
+    size:'Typically 2x8, 2x10 or 2x12, spaced 16 in (400 mm) apart centre to centre.',
+    connects:'Span between the rim joist and the support beam; the subfloor is fastened on top.',
+    tip:'Joists are set on edge (tall side up) because a board is far stiffer this way than lying flat.'},
+  rim: {label:'Rim joist', color:WOOD, kind:'Lumber',
+    def:'The board that runs around the outer edge of the floor frame and closes off the ends of the joists. Also called a band joist or header.',
+    role:'Keeps the joists upright and spaced, supports the wall above, and ties the whole perimeter together. It also seals the edge against air and pests.',
+    material:'Lumber of the same size as the joists, or engineered wood.',
+    size:'Same depth as the joists (for example 2x10).',
+    connects:'Sits on the sill plate; joist ends are nailed to it; the subfloor and wall studs sit on top.',
+    tip:'It is a major spot for heat loss, so it is usually insulated well.'},
+  block: {label:'Cross bracing (blocking)', color:WOOD, kind:'Lumber',
+    def:'Short pieces of lumber (or X-shaped braces) fitted tightly between neighbouring joists.',
+    role:'Stop joists from twisting or rolling over, share a heavy load between several joists, and make the floor stiffer and less bouncy.',
+    material:'Offcuts of joist lumber, or wood / metal X-bridging.',
+    size:'Same depth as the joists, length equal to the joist spacing.',
+    connects:'Nailed between two joists, usually mid-span or in a row every ~2.4 m (8 ft).',
+    tip:'They are often staggered so each one can be nailed from the side.'},
+  subfloor: {label:'Subfloor', color:BLUE, kind:'Sheet material',
+    def:'The structural sheet layer fixed on top of the joists. It is the floor you stand on before any finished flooring is added.',
+    role:'Spreads loads across the joists, makes a flat working platform for builders, and is the base for carpet, tile or hardwood.',
+    material:'Plywood or OSB (oriented strand board) sheets, often tongue-and-groove, glued and screwed or nailed.',
+    size:'Usually 5/8 to 3/4 in (about 16 to 19 mm) thick, 4 x 8 ft sheets.',
+    connects:'Fastened to the top of the joists and rim joist.',
+    tip:'Sheets are laid at a right angle to the joists with staggered seams for extra strength.'},
+  stud: {label:'Stud', color:WOOD, kind:'Lumber',
+    def:'A vertical board that forms the skeleton of a wall.',
+    role:'Carries the weight of the roof and upper floors down into the floor frame, and gives a base to attach wall sheathing and drywall.',
+    material:'Dimensional lumber (spruce, pine, fir).',
+    size:'Commonly 2x4 or 2x6, spaced 16 in (400 mm) centre to centre.',
+    connects:'Stands on a bottom plate fixed to the subfloor and rim joist area, topped by a top plate.',
+    tip:'Walls on the edge of the floor sit right above the rim joist so the load goes straight down.'}
+};
+
+const ROOF_PARTS = {
+  field: {label:'Field of roof', color:0x9c7b66, kind:'Roof surface', ex:0.8,
+    def:'The large, flat areas of the roof between the edges, ridges, hips and valleys. It is the part you see most when you look at a roof.',
+    role:'Sheds rain, snow and ice, and shields the structure and the people inside from sun and wind.',
+    material:'A roof covering such as asphalt shingles, metal panels, or clay or concrete tiles, laid over underlayment and a plywood or OSB roof deck.',
+    size:'The slope is called pitch: rise over run. For example 6/12 means 6 inches of rise for every 12 inches of run.',
+    connects:'Sits on the rafters or trusses. It ends at the ridge at the top, the eaves at the bottom, and meets other surfaces at hips and valleys.',
+    tip:'Steeper roofs shed water and snow faster, but they cost more to build and are harder to walk on.'},
+  ridge: {label:'Ridge', color:0x4a2f27, kind:'Roof line', ex:1.2,
+    def:'The horizontal line at the very top of the roof where two sloping surfaces meet.',
+    role:'Seals the joint at the peak so rain cannot get in, and gives the roof a clean, finished top edge.',
+    material:'Ridge cap shingles, a metal ridge cap or tile caps, over a ridge board or ridge beam in the framing.',
+    size:'Runs the full length of the peak, from one end of the roof to the other.',
+    connects:'Hips and the top ends of valleys finish at the ridge. A ridge vent can be installed along it.',
+    tip:'The ridge is the highest and most windy part of the roof, so the caps are overlapped carefully and nailed well.'},
+  hip: {label:'Hip', color:0xd2691e, kind:'Roof line', ex:1.2,
+    def:'A sloping ridge that runs from the peak down to the corner of the eaves, where two roof surfaces meet at an outside corner.',
+    role:'Directs water down both sides and ties the roof corners together. Roofs with hips are very strong against wind.',
+    material:'A hip rafter in the framing, covered with hip cap shingles, metal or tile.',
+    size:'Runs diagonally, so it is longer than the common rafters beside it.',
+    connects:'Starts at the ridge and ends at the corner of the eave, with a roof surface on each side.',
+    tip:'A hip is the opposite of a valley. A hip points outward like a roof corner, and a valley is a channel that points inward.'},
+  valley: {label:'Valley', color:BLUE, kind:'Roof line', ex:1.0,
+    def:'The inside corner where two roof slopes meet and form a V-shaped channel.',
+    role:'Collects the water from both slopes and carries it quickly down to the gutter.',
+    material:'Metal valley flashing (galvanized steel, aluminium or copper), or shingles woven or cut over a waterproof membrane.',
+    size:'Runs diagonally from where the two roofs meet down to the eave. Metal flashing is often about 16 to 24 inches (400 to 600 mm) wide.',
+    connects:'Joins two roof surfaces, for example a main roof and a wing, and ends at the gutter.',
+    tip:'Valleys carry the most water on the roof, so they are one of the most common places for leaks. Keep them clear of leaves.'},
+  chimney: {label:'Chimney', color:0xb5523b, kind:'Masonry / metal', ex:2.5,
+    def:'A vertical structure of brick, stone, concrete or metal that carries smoke and hot gases from a fireplace, stove or furnace out of the house.',
+    role:'Vents exhaust safely above the roof and creates the draft that pulls smoke upward.',
+    material:'Brick or stone with a clay flue liner, or a prefabricated insulated metal pipe. It usually has a concrete or metal cap on top.',
+    size:'A common code rule is at least 3 ft (about 0.9 m) above where it passes through the roof, and at least 2 ft (0.6 m) higher than anything within 10 ft (3 m). Check your local code.',
+    connects:'Rises from the fireplace or furnace through the roof. Metal flashing seals the joint where it meets the roof.',
+    tip:'The joint between chimney and roof is a very common place for leaks, so the flashing needs regular checks.'},
+  dormer: {label:'Dormer', color:0xe0b97a, kind:'Roof structure', ex:1.8,
+    def:'A small structure that sticks out of a sloping roof, usually with a vertical window and a little roof of its own.',
+    role:'Adds headroom, daylight and fresh air to an attic or upper room, and gives the house more character.',
+    material:'Framed with lumber, then covered with the same roofing and siding as the rest of the house. Windows are usually wood, vinyl or aluminium.',
+    size:'Small compared with the main roof, often about 3 to 6 ft (about 1 to 1.8 m) wide.',
+    connects:'Framed into the main roof rafters. Valley or step flashing seals the joints where its roof meets the main roof.',
+    tip:'The one in the model is a gable dormer. Other types are shed dormers, with a single sloping roof, and hipped dormers.'},
+  skylight: {label:'Skylight', color:0x7fd1ff, kind:'Window', ex:2.0,
+    def:'A window installed in the roof surface to let daylight into the room below.',
+    role:'Brings in natural light. Some models open to let in fresh air, and some have blinds.',
+    material:'Glass or acrylic glazing in an aluminium, wood or vinyl frame, sealed with a flashing kit.',
+    size:'Often made to fit between two rafters, so the framing needs little change.',
+    connects:'Set into an opening in the roof deck. Flashing around all four sides overlaps the roofing.',
+    tip:'Leaks usually come from the flashing, not the glass, so good installation matters more than the brand.'},
+  turtle: {label:'Turtle vent', color:0x444444, kind:'Ventilation', ex:2.0,
+    def:'A low box-shaped vent placed over a hole in the roof. It is also called a box vent or a louver vent.',
+    role:'Lets hot, damp air escape from the attic. Cool air enters through the soffit vents and pushes it out, with no moving parts.',
+    material:'Plastic, galvanized steel or aluminium, with a flat flange that goes under the shingles.',
+    size:'Several are used per roof. A common rule of thumb is one square foot of ventilation for every 150 square feet of attic floor, split between intake and exhaust.',
+    connects:'Sits on the upper part of the roof field over a hole cut through the deck. Shingles overlap its top and sides.',
+    tip:'Do not mix different exhaust vents on one roof, for example turtle vents with a ridge vent, because they can short-circuit the airflow.'},
+  plumbing: {label:'Plumbing vent', color:0xd9d9d9, kind:'Plumbing', ex:2.4,
+    def:'A pipe that rises from the drain system of the house up through the roof. It is also called a vent stack.',
+    role:'Lets air into the drains so water flows smoothly, and lets sewer gases escape above the house.',
+    material:'PVC or ABS plastic, or cast iron in older houses, with a rubber or metal flashing around its base.',
+    size:'Commonly 1.5 to 4 inches (about 40 to 100 mm) wide.',
+    connects:'Joins the drain lines inside the walls and passes through the roof deck. Flashing seals the opening.',
+    tip:'The rubber collar around the pipe cracks with age and is a common source of small roof leaks.'},
+  ridgevent: {label:'Ridge vent', color:0x1b1b1b, kind:'Ventilation', ex:1.8,
+    def:'A continuous vent that runs along the ridge of the roof, hidden under the ridge cap.',
+    role:'Lets hot air escape from the highest point of the attic, while soffit vents let cool air in at the bottom, so the whole attic is ventilated.',
+    material:'Plastic or aluminium vent material with a weather baffle, covered by ridge cap shingles.',
+    size:'A narrow slot, often about 1 inch (25 mm) wide on each side of the ridge, is cut in the roof deck below it.',
+    connects:'Sits on the ridge, over the slot, and works together with the soffit vents.',
+    tip:'It only works well if the soffit vents are open and not blocked by insulation.'},
+  gutter: {label:'Gutter', color:0x9aa5b1, kind:'Drainage', ex:-0.9,
+    def:'A channel fixed along the lower edge of the roof that collects the rainwater running off it.',
+    role:'Carries water to the downspouts and away from the walls and foundation, which protects the siding, the fascia and the ground around the house.',
+    material:'Aluminium, vinyl, galvanized steel or copper.',
+    size:'Residential gutters are commonly 5 or 6 inches (125 or 150 mm) wide, and slope slightly toward the downspout.',
+    connects:'Hangs from the fascia board. Downspouts take the water from the gutter to the ground.',
+    tip:'Clogged gutters overflow, which can rot the fascia and flood the foundation, so clean them at least twice a year.'},
+  fascia: {label:'Fascia', color:0xf4f1e8, kind:'Trim', ex:-0.5,
+    def:'A long, straight board along the lower edge of the roof, fixed to the ends of the rafters.',
+    role:'Closes the roof edge, protects the rafter ends from rain and pests, carries the gutter and gives a neat finish.',
+    material:'Wood such as pine or cedar, or aluminium-wrapped wood, PVC or composite.',
+    size:'Commonly 1x6 to 1x8 boards (about 19 mm thick and 140 to 185 mm wide).',
+    connects:'Fixed to the rafter ends. The soffit meets its bottom edge and the gutter is fixed to its face.',
+    tip:'Peeling paint or soft spots on the fascia often mean water is getting behind the gutter.'},
+  gable: {label:'Gable', color:0xe9dfb5, kind:'Wall section', ex:0,
+    def:'The triangular part of the end wall of a house, between the sloping edges of a pitched roof.',
+    role:'Closes the end of the attic or roof space and gives the roof its shape. Gables often hold a vent or a window that lets in light and air.',
+    material:'Wall framing covered with the same siding as the house, sometimes with a gable vent or a decorative window.',
+    size:'Its height depends on the roof pitch. A steeper pitch makes a taller triangle.',
+    connects:'Sits on top of the end wall, below the sloping edges of the roof (called rakes).',
+    tip:'Gable ends catch more wind than hips, so in storm areas they need extra bracing.'},
+  soffit: {label:'Soffit', color:0xc9b48a, kind:'Trim', ex:-1.2,
+    def:'The underside of the roof overhang. It is the board that covers the gap between the outer wall and the fascia.',
+    role:'Covers and protects the rafter ends and gives a finished look. Vented soffits let fresh air into the attic.',
+    material:'Vinyl, aluminium, plywood or fibre cement, often with small holes or slots for ventilation.',
+    size:'The overhang is commonly 12 to 24 inches (300 to 600 mm).',
+    connects:'Fixed to the wall on one side and to the bottom of the fascia on the other.',
+    tip:'Never block soffit vents with insulation. Use baffles so air can flow into the attic.'}
+};
+
+/* ============ GLOBAL STATE ============ */
+let M, parts, order, meshes = [], labels = [];
+const CTX = {wall:0xa9c7a1, glass:0x2b3a4a, door:0x7a4a2a};
+function colorOf(k){ return CTX[k] !== undefined ? CTX[k] : parts[k].color; }
+
+/* ============ TEXT TO SPEECH ============ */
+const synth = window.speechSynthesis;
+const voiceSel = document.getElementById('voiceSel');
+let voices = [];
+function loadVoices() {
+  if (!synth) return;
+  voices = synth.getVoices();
+  const keep = voiceSel.value;
+  voiceSel.innerHTML = '';
+  voices.forEach((v, i) => {
+    const o = document.createElement('option');
+    o.value = i; o.textContent = v.name + ' (' + v.lang + ')';
+    voiceSel.appendChild(o);
+  });
+  const pref = voices.findIndex(v => /^en/i.test(v.lang) && /natural|online|aria|jenny|zira|google/i.test(v.name));
+  const firstEn = voices.findIndex(v => /^en/i.test(v.lang));
+  voiceSel.value = keep || (pref >= 0 ? pref : (firstEn >= 0 ? firstEn : 0));
+}
+if (synth) { loadVoices(); synth.onvoiceschanged = loadVoices; }
+
+function clean(t) {
+  return t.replace(/(\d+)\/(\d+)/g, '$1 over $2')
+          .replace(/(\d+)\s*x\s*(\d+)/gi, '$1 by $2')
+          .replace(/~/g, 'about ')
+          .replace(/\bin\b(?=[\s)),.]|$)(?<=\d\s+in)/g, 'inches')
+          .replace(/\bmm\b/g, 'millimetres')
+          .replace(/(\d)\s*m\b/g, '$1 metres')
+          .replace(/\bft\b/g, 'feet')
+          .replace(/\bOSB\b/g, 'O S B')
+          .replace(/[()]/g, ',')
+          .replace(/\s*\/\s*/g, ' or ');
+}
+
+let speakToken = 0;
+function stopSpeech() {
+  speakToken++;
+  if (synth) synth.cancel();
+  document.querySelectorAll('.speaking').forEach(e => e.classList.remove('speaking'));
+}
+
+function speak(key) {
+  if (!synth) { alert('Your browser does not support speech. Try Microsoft Edge or Chrome.'); return; }
+  stopSpeech();
+  const myToken = speakToken;
+  const p = parts[key];
+  const full = document.getElementById('full').checked;
+  const chunks = [{t: p.label, id: 'h2'}, {t: 'Definition. ' + p.def, id: 'def'}];
+  if (full) {
+    chunks.push({t: 'What it does. ' + p.role, id: 'role'},
+                {t: 'Made of. ' + p.material, id: 'material'},
+                {t: 'Typical size. ' + p.size, id: 'size'},
+                {t: 'Connects to. ' + p.connects, id: 'connects'},
+                {t: 'Good to know. ' + p.tip, id: 'tip'});
+  }
+  chunks.forEach(c => {
+    const sentences = clean(c.t).split(/(?<=[.!?])\s+/);
+    sentences.forEach((s, i) => {
+      const u = new SpeechSynthesisUtterance(s);
+      const v = voices[parseInt(voiceSel.value)];
+      if (v) { u.voice = v; u.lang = v.lang; }
+      u.rate = parseFloat(document.getElementById('rate').value);
+      if (i === 0) u.onstart = () => {
+        if (myToken !== speakToken) return;
+        document.querySelectorAll('.speaking').forEach(e => e.classList.remove('speaking'));
+        const el = document.querySelector('[data-sp="' + c.id + '"]');
+        if (el) el.classList.add('speaking');
+      };
+      synth.speak(u);
+    });
+  });
+  const done = new SpeechSynthesisUtterance('');
+  done.onend = () => document.querySelectorAll('.speaking').forEach(e => e.classList.remove('speaking'));
+  synth.speak(done);
+}
+
+/* ============ 3D SCENE ============ */
+const view = document.getElementById('view');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0xfdf6e9);
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 300);
+camera.position.set(13, 10, 15);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+view.appendChild(renderer.domElement);
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 1, 0);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+sun.position.set(8, 16, 10);
+scene.add(sun);
+
+/* ---- shape helpers ---- */
+function mat(color, dbl) {
+  return new THREE.MeshStandardMaterial({color:color, roughness:0.7, transparent:true, opacity:1,
+                                         side: dbl ? THREE.DoubleSide : THREE.FrontSide});
+}
+function finish(m, key, ex, ctx) {
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry),
+        new THREE.LineBasicMaterial({color:0x4a3a2a, transparent:true}));
+  m.add(edges);
+  const e = (ex === undefined) ? ((parts[key] && parts[key].ex) || 0) : ex;
+  m.userData = {key:key, base:m.position.clone(), ex:e, edges:edges, ctx:!!ctx};
+  scene.add(m); meshes.push(m);
+  return m;
+}
+function add(key, w, h, d, x, y, z, ex, ctx) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(colorOf(key), false));
+  m.position.set(x, y, z);
+  return finish(m, key, ex, ctx);
+}
+function poly(key, pts, ex, ctx) {
+  const g = new THREE.BufferGeometry(), v = [];
+  for (let i = 1; i < pts.length - 1; i++) v.push(...pts[0], ...pts[i], ...pts[i+1]);
+  g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3));
+  g.computeVertexNormals();
+  return finish(new THREE.Mesh(g, mat(colorOf(key), true)), key, ex, ctx);
+}
+function bar(key, a, b, t, ex, t2) {
+  const A = new THREE.Vector3(a[0], a[1], a[2]), B = new THREE.Vector3(b[0], b[1], b[2]);
+  const m = new THREE.Mesh(new THREE.BoxGeometry(t, t2 || t, A.distanceTo(B)), mat(colorOf(key), false));
+  m.position.copy(A).add(B).multiplyScalar(0.5);
+  m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), B.clone().sub(A).normalize());
+  return finish(m, key, ex);
+}
+
+/* ============ MODEL 1: FLOOR FRAME ============ */
+function buildFloor() {
+  add('found', 10.6, 1.5, 0.8, 0, -0.75, -4.4, -2);
+  add('found', 0.9, 0.9, 0.9, -4.6, -0.95, 4.2, -2.6);
+  add('found', 0.9, 0.9, 0.9,  4.6, -0.95, 4.2, -2.6);
+  add('sill', 10.2, 0.2, 0.6, 0, 0.1, -4.4, -1);
+  add('beam', 10.4, 0.8, 0.8, 0, -0.2, 4.2, -1.6);
+  add('rim', 10, 1, 0.3, 0, 0.7, -4.25, 0);
+  add('rim', 10, 1, 0.3, 0, 0.7,  4.25, 0);
+  const xs = [-4.85, -2.425, 0, 2.425, 4.85];
+  xs.forEach(x => add('joist', 0.3, 1, 8.2, x, 0.7, 0, 0));
+  for (let i = 0; i < xs.length - 1; i++) {
+    const cx = (xs[i] + xs[i+1]) / 2;
+    add('block', xs[i+1] - xs[i] - 0.3, 1, 0.3, cx, 0.7, i % 2 ? 0.4 : -0.4, 0);
+  }
+  add('subfloor', 5.6, 0.2, 5.6, -2.2, 1.3, -1.4, 1.6);
+  [-4.5, -1.5, 1.5, 4.5].forEach(x => add('stud', 0.3, 4, 0.5, x, 3.4, -4.25, 3.2));
+}
+
+/* ============ MODEL 2: ROOF ============ */
+function buildRoof() {
+  const eave = 3.0, a = 3.3, H = 2.2, rY = eave + H, slope = H / a, th = Math.atan2(H, a);
+  const xl = -5.3, xr = 5.3, xh = xl + a;            // main roof: hip on the left, gable on the right
+  const xw = 1.0, aw = 2.5, Hw = aw * slope, rw = eave + Hw, zf = 6.3, z0 = a - aw;   // front wing
+
+  // House body (context only, not selectable)
+  add('wall', 10, 3.15, 6, 0, 1.575, 0, 0, true);
+  add('wall', 4.6, 3.13, 6, xw, 1.565, 3, 0, true);
+  add('glass', 0.9, 1.1, 0.06, -3.9, 1.7, 3.02, 0, true);
+  add('door',  0.9, 2.0, 0.06, -2.3, 1.0, 3.02, 0, true);
+  add('glass', 0.9, 1.1, 0.06, 4.2, 1.7, 3.02, 0, true);
+  add('glass', 1.4, 1.2, 0.06, xw, 1.7, 6.02, 0, true);
+  add('glass', 0.06, 1.1, 0.9, 3.32, 1.7, 4.6, 0, true);
+  add('glass', 0.7, 0.8, 0.06, xw, 3.65, 6.06, 0, true);
+
+  // Field of roof (flat surfaces)
+  poly('field', [[xh,rY,0],[xr,rY,0],[xr,eave,a],[xl,eave,a]]);
+  poly('field', [[xh,rY,0],[xr,rY,0],[xr,eave,-a],[xl,eave,-a]]);
+  poly('field', [[xl,eave,a],[xl,eave,-a],[xh,rY,0]]);
+  poly('field', [[xw,rw,z0],[xw+aw,eave,a],[xw+aw,eave,zf],[xw,rw,zf]]);
+  poly('field', [[xw,rw,z0],[xw-aw,eave,a],[xw-aw,eave,zf],[xw,rw,zf]]);
+
+  // Gable ends
+  poly('gable', [[xw-2.3,3.13,6.02],[xw+2.3,3.13,6.02],[xw,rw,6.02]]);
+  poly('gable', [[5.02,3.15,-3],[5.02,3.15,3],[5.02,rY,0]]);
+
+  // Ridge, hip, valley, ridge vent
+  bar('ridge',  [xh,rY+.04,0],[xr,rY+.04,0], .24, undefined, .16);
+  bar('ridge',  [xw,rw+.04,z0],[xw,rw+.04,zf], .24, undefined, .16);
+  bar('hip',    [xh,rY+.03,0],[xl,eave+.03,a], .22, undefined, .16);
+  bar('hip',    [xh,rY+.03,0],[xl,eave+.03,-a], .22, undefined, .16);
+  bar('valley', [xw,rw+.03,z0],[xw+aw,eave+.03,a], .2, undefined, .12);
+  bar('valley', [xw,rw+.03,z0],[xw-aw,eave+.03,a], .2, undefined, .12);
+  add('ridgevent', 0.5, 0.22, 3.2, xw, rw + 0.1, 4.0);
+
+  // Chimney
+  add('chimney', 0.9, 2.9, 0.9, -2.6, 4.95, -1.3);
+  add('chimney', 1.1, 0.15, 1.1, -2.6, 6.48, -1.3);
+
+  // Dormer (with its own little roof and window)
+  add('dormer', 1.5, 1.3, 1.2, -2.9, 3.9, 2.1);
+  poly('dormer', [[-3.8,4.5,1.5],[-3.8,4.5,2.9],[-2.9,5.0,2.9],[-2.9,5.0,1.5]]);
+  poly('dormer', [[-2.0,4.5,1.5],[-2.0,4.5,2.9],[-2.9,5.0,2.9],[-2.9,5.0,1.5]]);
+  poly('dormer', [[-3.65,4.55,2.71],[-2.15,4.55,2.71],[-2.9,5.0,2.71]]);
+  add('glass', 0.6, 0.55, 0.05, -2.9, 3.95, 2.73, parts.dormer.ex, true);
+
+  // Skylight, turtle vent, plumbing vent (all sit on the roof slope)
+  let m = add('skylight', 0.9, 0.1, 0.8, -0.5, rY - slope * 1.7 + 0.06, 1.7);
+  m.rotation.x = th;
+  m = add('turtle', 0.6, 0.14, 0.5, 4.3, rY - slope * 1.3 + 0.07, 1.3);
+  m.rotation.x = th;
+  const pv = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 1.1, 16), mat(colorOf('plumbing'), false));
+  pv.position.set(-0.9, rY - slope * 2.2 + 0.45, 2.2);
+  finish(pv, 'plumbing');
+
+  // Eave trim: [x, z, width, depth, gutterOffsetX, gutterOffsetZ]
+  const segs = [
+    [-3.4, a, 3.8, 0.08, 0, 0.1],
+    [ 4.4, a, 1.8, 0.08, 0, 0.1],
+    [xw - aw, 4.8, 0.08, 3.0, -0.1, 0],
+    [xw + aw, 4.8, 0.08, 3.0,  0.1, 0],
+    [xl, 0, 0.08, 6.6, -0.1, 0],
+    [0, -a, 10.6, 0.08, 0, -0.1]
+  ];
+  segs.forEach(s => {
+    add('fascia', s[2], 0.3, s[3], s[0], 2.9, s[1]);
+    add('gutter', s[2] > 0.1 ? s[2] : 0.2, 0.2, s[3] > 0.1 ? s[3] : 0.2, s[0] + s[4], 2.78, s[1] + s[5]);
+  });
+  [[-3.4,3.15,3.8,0.3],[4.4,3.15,1.8,0.3],[-1.4,4.65,0.2,3.3],[3.4,4.65,0.2,3.3],[-5.15,0,0.3,6.0],[0,-3.15,10.6,0.3]]
+    .forEach(s => add('soffit', s[2], 0.05, s[3], s[0], 2.95, s[1]));
+}
+
+/* ============ MODEL REGISTRY ============ */
+const MODELS = {
+  floor: {
+    name:'Components of a Floor Frame', tour:'Guided tour: build order',
+    cam:[13,10,15], target:[0,1,0], parts:FLOOR_PARTS, build:buildFloor,
+    order:['found','sill','beam','joist','rim','block','subfloor','stud'],
+    welcome:'Click <b>Next</b> for a step-by-step tour from the foundation up, or click any part in the model. The definition will be read out loud to you.'
+  },
+  roof: {
+    name:'Components of a Roof', tour:'Guided tour: eave to peak',
+    cam:[15,11,17], target:[0,3,1.5], parts:ROOF_PARTS, build:buildRoof,
+    order:['gutter','fascia','soffit','gable','field','valley','hip','ridge','ridgevent','turtle','plumbing','skylight','dormer','chimney'],
+    welcome:'Click <b>Next</b> for a tour from the gutter at the roof edge up to the chimney, or click any part of the roof in the model. The green house is only there for context.'
+  }
+};
+
+/* ============ UI ============ */
+const list = document.getElementById('list');
+const info = document.getElementById('info');
+let current = null, selected = null, tour = -1, goal = null, tween = 0;
+function hex(c){ return '#' + c.toString(16).padStart(6,'0'); }
+
+function stepText() {
+  document.getElementById('step').textContent =
+    tour >= 0 ? ('Step ' + (tour + 1) + ' of ' + order.length) : M.tour;
+}
+function showWelcome() { info.innerHTML = '<h2>Welcome</h2>' + M.welcome; }
+
+function select(key) {
+  selected = key;
+  tour = order.indexOf(key);
+  meshes.forEach(m => {
+    const on = m.userData.key === key;
+    m.material.opacity = on ? 1 : 0.18;
+    m.userData.edges.material.opacity = on ? 1 : 0.15;
+    m.material.emissive.setHex(on ? 0x553000 : 0);
+    m.material.depthWrite = on;
+  });
+  document.querySelectorAll('.item').forEach(e => e.classList.toggle('active', e.dataset.key === key));
+  labels.forEach(l => l.el.classList.toggle('on', l.key === key));
+  const p = parts[key];
+  info.innerHTML =
+    '<span class="tag">' + p.kind + '</span><h2 data-sp="h2">' + p.label + '</h2>' +
+    '<div class="def" data-sp="def">' + p.def + '</div>' +
+    '<dl><dt>What it does</dt><dd data-sp="role">' + p.role + '</dd>' +
+    '<dt>Made of</dt><dd data-sp="material">' + p.material + '</dd>' +
+    '<dt>Typical size</dt><dd data-sp="size">' + p.size + '</dd>' +
+    '<dt>Connects to</dt><dd data-sp="connects">' + p.connects + '</dd>' +
+    '<dt>Good to know</dt><dd data-sp="tip">' + p.tip + '</dd></dl>';
+  stepText();
+  const box = new THREE.Box3();
+  meshes.filter(m => m.userData.key === key && m.visible).forEach(m => box.expandByObject(m));
+  if (!box.isEmpty()) { goal = box.getCenter(new THREE.Vector3()); tween = 45; }
+  if (document.getElementById('auto').checked) speak(key); else stopSpeech();
+}
+
+function resetAll() {
+  stopSpeech();
+  selected = null; tour = -1;
+  meshes.forEach(m => {
+    m.material.opacity = 1; m.material.emissive.setHex(0);
+    m.material.depthWrite = true; m.userData.edges.material.opacity = 1;
+  });
+  document.querySelectorAll('.item').forEach(e => e.classList.remove('active'));
+  labels.forEach(l => l.el.classList.remove('on'));
+  stepText(); showWelcome();
+  goal = new THREE.Vector3(M.target[0], M.target[1], M.target[2]); tween = 45;
+}
+
+function buildLabels() {
+  const show = document.getElementById('labels').checked;
+  order.forEach(key => {
+    const m = meshes.find(x => x.userData.key === key);
+    if (!m) return;
+    const el = document.createElement('div');
+    el.className = 'lab'; el.textContent = parts[key].label;
+    el.addEventListener('click', () => select(key));
+    view.appendChild(el);
+    labels.push({el:el, m:m, key:key, show:show, hidden:false});
+  });
+}
+
+function buildList() {
+  list.innerHTML = '';
+  order.forEach(key => {
+    const p = parts[key];
+    const row = document.createElement('div');
+    row.className = 'item'; row.dataset.key = key;
+    row.innerHTML = '<input type="checkbox" checked><span class="dot" style="background:' + hex(p.color) + '"></span><span>' + p.label + '</span>';
+    row.querySelector('input').addEventListener('click', e => {
+      e.stopPropagation();
+      meshes.filter(m => m.userData.key === key).forEach(m => m.visible = e.target.checked);
+      labels.filter(l => l.key === key).forEach(l => l.hidden = !e.target.checked);
+    });
+    row.addEventListener('click', () => select(key));
+    list.appendChild(row);
+  });
+}
+
+function loadModel(name) {
+  stopSpeech();
+  meshes.forEach(m => {
+    scene.remove(m);
+    m.geometry.dispose(); m.material.dispose();
+    m.userData.edges.geometry.dispose(); m.userData.edges.material.dispose();
+  });
+  meshes = [];
+  labels.forEach(l => l.el.remove());
+  labels = [];
+  current = name; M = MODELS[name]; parts = M.parts; order = M.order;
+  M.build();
+  buildLabels(); buildList();
+  selected = null; tour = -1; goal = null; tween = 0;
+  document.getElementById('explode').value = 0;
+  camera.position.set(M.cam[0], M.cam[1], M.cam[2]);
+  controls.target.set(M.target[0], M.target[1], M.target[2]);
+  document.getElementById('ttl').textContent = M.name;
+  document.getElementById('tab-floor').classList.toggle('sel', name === 'floor');
+  document.getElementById('tab-roof').classList.toggle('sel', name === 'roof');
+  stepText(); showWelcome();
+}
+
+document.getElementById('tab-floor').onclick = () => { if (current !== 'floor') loadModel('floor'); };
+document.getElementById('tab-roof').onclick  = () => { if (current !== 'roof')  loadModel('roof'); };
+
+document.getElementById('next').onclick = () => select(order[(tour + 1) % order.length]);
+document.getElementById('prev').onclick = () =>
+  select(order[tour < 0 ? order.length - 1 : (tour - 1 + order.length) % order.length]);
+document.getElementById('reset').onclick = resetAll;
+document.getElementById('labels').onchange = e => labels.forEach(l => l.show = e.target.checked);
+document.getElementById('speakBtn').onclick = () => { if (selected) speak(selected); else select(order[0]); };
+document.getElementById('stopBtn').onclick = stopSpeech;
+document.getElementById('rate').onchange = () => { if (selected && synth.speaking) speak(selected); };
+voiceSel.onchange = () => { if (selected && synth.speaking) speak(selected); };
+window.addEventListener('beforeunload', stopSpeech);
+
+document.getElementById('explode').addEventListener('input', e => {
+  const v = parseFloat(e.target.value);
+  meshes.forEach(m => { m.position.copy(m.userData.base); m.position.y += m.userData.ex * v; });
+});
+
+/* Click picking (ignore drags). Clicking the house or empty space resets. */
+const ray = new THREE.Raycaster(), mouse = new THREE.Vector2();
+let down = null;
+renderer.domElement.addEventListener('pointerdown', e => down = [e.clientX, e.clientY]);
+renderer.domElement.addEventListener('pointerup', e => {
+  if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+  const r = renderer.domElement.getBoundingClientRect();
+  mouse.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+  const hit = ray.intersectObjects(meshes.filter(m => m.visible))[0];
+  if (hit && !hit.object.userData.ctx) select(hit.object.userData.key); else resetAll();
+});
+
+function resize() {
+  const w = view.clientWidth, h = view.clientHeight;
+  renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize); resize();
+
+const bx = new THREE.Box3(), ctr = new THREE.Vector3();
+function placeLabels() {
+  const w = view.clientWidth, h = view.clientHeight;
+  labels.forEach(l => {
+    const vis = l.show && !l.hidden && l.m.visible;
+    l.el.style.display = vis ? 'block' : 'none';
+    if (!vis) return;
+    bx.setFromObject(l.m); bx.getCenter(ctr); ctr.y = bx.max.y + 0.3;
+    ctr.project(camera);
+    l.el.style.left = ((ctr.x * 0.5 + 0.5) * w) + 'px';
+    l.el.style.top  = ((-ctr.y * 0.5 + 0.5) * h) + 'px';
+    l.el.style.opacity = (selected && selected !== l.key) ? 0.35 : 1;
+  });
+}
+
+loadModel('floor');
+
+(function loop() {
+  requestAnimationFrame(loop);
+  if (tween > 0 && goal) { controls.target.lerp(goal, 0.12); tween--; }
+  controls.update();
+  renderer.render(scene, camera);
+  placeLabels();
+})();
+</script>
+</body>
+</html>
